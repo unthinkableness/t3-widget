@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "snapshotSequence": 730760,
+  "projects": [
+    { "id": "p-widget", "title": "Widget", "workspaceRoot": "C:/dev/widget" },
+    { "id": "p-none", "title": "No project", "workspaceRoot": "C:/" }
+  ],
+  "archivedThreads": [],
+  "olderSettled": { "before": "2026-10-31T23:39:40.742Z", "asOfSequence": 730760, "counts": [] },
+  "threads": [
+    { "id": "t-run", "projectId": "p-widget", "title": "Running thread", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-run" },
+      "status": "running", "activityRunStatus": "running", "pendingRuntimeRequest": null, "pendingBackgroundTasks": [],
+      "latestRunBackgroundWake": false, "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T09:00:00.000Z" },
+
+    { "id": "t-coord", "projectId": "p-widget", "title": "Coordinator waiting on children", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-coord" },
+      "status": "completed", "activityRunStatus": null, "pendingRuntimeRequest": null,
+      "pendingBackgroundTasks": [ { "taskId": "c1", "kind": "subagent" } ],
+      "latestRunBackgroundWake": false, "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T09:00:00.000Z" },
+
+    { "id": "t-done", "projectId": "p-widget", "title": "Finished", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-done" },
+      "status": "completed", "activityRunStatus": null, "pendingRuntimeRequest": null, "pendingBackgroundTasks": [],
+      "settledOverride": "settled", "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T08:00:00.000Z" },
+
+    { "id": "t-approval", "projectId": "p-widget", "title": "Allow sdkmanager?", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-approval" },
+      "status": "running", "activityRunStatus": "waiting",
+      "pendingRuntimeRequest": { "id": "r1", "kind": "command_approval", "createdAt": "2026-11-19T10:00:00.000Z", "blocking": true },
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T10:00:00.000Z" },
+
+    { "id": "t-input", "projectId": "p-none", "title": "Question for you", "creationSource": "mobile",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-input" },
+      "status": "running", "activityRunStatus": "waiting",
+      "pendingRuntimeRequest": { "id": "r2", "kind": "user_input", "createdAt": "2026-11-19T11:00:00.000Z", "blocking": true },
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T11:00:00.000Z" },
+
+    { "id": "t-auth", "projectId": "p-widget", "title": "Auth refresh only", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-auth" },
+      "status": "running", "activityRunStatus": "running",
+      "pendingRuntimeRequest": { "id": "r3", "kind": "auth_refresh", "createdAt": "2026-11-19T13:00:00.000Z" },
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T13:00:00.000Z" },
+
+    { "id": "t-parent", "projectId": "p-widget", "title": "Parent thread", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-parent" },
+      "status": "running", "activityRunStatus": "running", "pendingRuntimeRequest": null,
+      "pendingBackgroundTasks": [ { "taskId": "s1", "kind": "subagent", "awaited": true } ],
+      "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T12:00:00.000Z" },
+
+    { "id": "t-sub", "projectId": "p-widget", "title": "Subagent needing approval", "creationSource": "mcp",
+      "lineage": { "parentThreadId": "t-parent", "relationshipToParent": "subagent", "rootThreadId": "t-parent" },
+      "status": "running", "activityRunStatus": "waiting",
+      "pendingRuntimeRequest": { "id": "r4", "kind": "command_approval", "createdAt": "2026-11-19T12:00:00.000Z", "blocking": true },
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T12:00:00.000Z" },
+
+    { "id": "t-sub-q", "projectId": "p-widget", "title": "Subagent asking its coordinator", "creationSource": "mcp",
+      "lineage": { "parentThreadId": "t-run", "relationshipToParent": "subagent", "rootThreadId": "t-run" },
+      "status": "running", "activityRunStatus": "waiting",
+      "pendingRuntimeRequest": { "id": "r5", "kind": "user_input", "createdAt": "2026-11-19T14:00:00.000Z" },
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T14:00:00.000Z" },
+
+    { "id": "t-native", "projectId": "p-widget", "title": "Provider-native subagent", "creationSource": "provider",
+      "lineage": { "parentThreadId": "t-done", "relationshipToParent": "subagent", "rootThreadId": "t-done" },
+      "status": "running", "activityRunStatus": "running",
+      "pendingRuntimeRequest": { "id": "r6", "kind": "command_approval", "createdAt": "2026-11-19T15:00:00.000Z" },
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T15:00:00.000Z" },
+
+    { "id": "t-archived", "projectId": "p-widget", "title": "Archived but waiting", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-archived" },
+      "status": "running", "activityRunStatus": "waiting",
+      "pendingRuntimeRequest": { "id": "r7", "kind": "user_input", "createdAt": "2026-11-19T16:00:00.000Z" },
+      "pendingBackgroundTasks": [], "archivedAt": "2026-11-19T16:30:00.000Z", "deletedAt": null, "updatedAt": "2026-11-19T16:30:00.000Z" },
+
+    { "id": "t-side", "projectId": "p-widget", "title": "Side chat", "creationSource": "web",
+      "lineage": { "parentThreadId": "t-run", "relationshipToParent": null, "rootThreadId": "t-run", "sideChat": true },
+      "status": "running", "activityRunStatus": "running", "pendingRuntimeRequest": null,
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T09:00:00.000Z" },
+
+    { "id": "t-monitor", "projectId": "p-widget", "title": "Woken by monitor", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-monitor" },
+      "status": "completed", "activityRunStatus": null, "pendingRuntimeRequest": null, "latestRunBackgroundWake": true,
+      "pendingBackgroundTasks": [ { "taskId": "m1", "kind": "monitor" } ],
+      "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T09:00:00.000Z" },
+
+    { "id": "t-prwatch", "projectId": "p-widget", "title": "PR watch only", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-prwatch" },
+      "status": "completed", "activityRunStatus": null, "pendingRuntimeRequest": null, "latestRunBackgroundWake": true,
+      "pendingBackgroundTasks": [ { "taskId": "pull-request-watch:42", "kind": "monitor" } ],
+      "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T09:00:00.000Z" },
+
+    { "id": "t-idle", "projectId": "p-widget", "title": "Idle", "creationSource": "web",
+      "lineage": { "parentThreadId": null, "relationshipToParent": null, "rootThreadId": "t-idle" },
+      "status": "idle", "activityRunStatus": null, "pendingRuntimeRequest": null,
+      "pendingBackgroundTasks": [], "archivedAt": null, "deletedAt": null, "updatedAt": "2026-11-19T07:00:00.000Z" }
+  ]
+}

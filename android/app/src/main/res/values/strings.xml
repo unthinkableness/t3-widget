@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">T3 Widget</string>
+    <string name="widget_name">T3 Code status</string>
+    <string name="widget_description">Running threads, threads that need you, and usage limits</string>
+</resources>

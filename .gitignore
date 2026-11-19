@@ -1,0 +1,47 @@
+# Build outputs
+build/
+dist/
+*.apk
+*.aab
+*.ap_
+*.dex
+android/app/release/
+android/.kotlin/
+.kotlin/
+
+# Gradle / Android local state
+.gradle/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing material and secrets (never commit these)
+keystore.properties
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+*token*.txt
+*.token
+.env
+.env.*
+
+# Node (pc-setup QR helper)
+node_modules/
+
+# IDEs / editors
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store
+Thumbs.db
+
+# Temp / logs
+*.tmp
+*.log
+tmp/
+temp/
+t3widget-qr-*.html

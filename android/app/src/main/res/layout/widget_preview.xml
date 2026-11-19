@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/preview_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
+
+    <TextView
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="@drawable/preview_logo"
+        android:gravity="center"
+        android:text="T3"
+        android:textColor="#F2F2F2"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:text="● 2 running   ● 1 needs you"
+        android:textColor="#F2F2F2"
+        android:textSize="12sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Claude 5h 72%\nCodex 91%"
+        android:textColor="#9A9AA0"
+        android:textSize="11sp" />
+</LinearLayout>

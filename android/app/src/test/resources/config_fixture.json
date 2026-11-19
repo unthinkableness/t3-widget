@@ -1,0 +1,21 @@
+{
+  "providers": [
+    { "instanceId": "claudeAgent", "driver": "claudeAgent", "enabled": true, "status": "ready",
+      "usageLimits": { "checkedAt": "2026-11-19T13:39:51.354Z", "windows": [
+        { "id": "five_hour", "kind": "session", "label": "Session", "usedPercent": 12.7 },
+        { "id": "seven_day", "kind": "weekly", "label": "Weekly", "usedPercent": 59 },
+        { "id": "seven_day_fable", "kind": "weekly", "label": "Weekly · Fable", "usedPercent": 0 } ] } },
+    { "instanceId": "codex", "driver": "codex", "enabled": true,
+      "usageLimits": { "windows": [
+        { "id": "primary", "kind": "session", "usedPercent": 91 },
+        { "id": "secondary", "kind": "weekly", "usedPercent": 40 } ] } },
+    { "instanceId": "antigravity", "driver": "antigravity", "enabled": true,
+      "usageLimits": { "windows": [
+        { "id": "3p-5h", "kind": "session", "usedPercent": 99 },
+        { "id": "gemini-5h", "kind": "session", "usedPercent": 5 },
+        { "id": "3p-weekly", "kind": "weekly", "usedPercent": 99 },
+        { "id": "gemini-weekly", "kind": "weekly", "usedPercent": 20 } ] } },
+    { "instanceId": "opencode", "enabled": true, "usageLimits": { "unavailable": { "reason": "unsupported" } } },
+    { "instanceId": "claudeAgent_history", "enabled": false }
+  ]
+}
