@@ -28,6 +28,7 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.File
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.security.MessageDigest
 import java.text.DateFormat
 import java.util.Date
@@ -58,11 +59,18 @@ object Updater {
     val busy: StateFlow<String?> = _busy
 
     /** The installer's confirmation intent for the session waiting on the user (lost if the process dies). */
-    @Volatile var pendingConfirm: Intent? = null
+    @Volatile private var pendingConfirm: Intent? = null
     @Volatile private var pendingConfirmCode: Int = 0
 
-    /** True while the settings screen is started (so a confirmation can be launched directly). */
-    @Volatile var uiVisible: Boolean = false
+    @Volatile private var resumedSettings: WeakReference<Activity>? = null
+
+    fun attachSettings(activity: Activity) {
+        resumedSettings = WeakReference(activity)
+    }
+
+    fun detachSettings(activity: Activity) {
+        if (resumedSettings?.get() === activity) resumedSettings = null
+    }
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -87,6 +95,7 @@ object Updater {
     suspend fun check(context: Context, trigger: Trigger): RunResult = guarded(context) { ctx ->
         val store = UpdateStore(ctx)
         val st0 = store.state()
+        if (hasOpenSession(ctx, st0)) return@guarded RunResult.DONE
         val now = System.currentTimeMillis()
         val automatic = trigger != Trigger.MANUAL
         // The backoff gate applies to periodic/app-open checks; the scheduled retry is what it was waiting for.
@@ -148,9 +157,6 @@ object Updater {
                 }
                 RunResult.DONE
             }
-            // A confirmation is already up (or waiting in the notification): don't start another session.
-            automatic && st.awaitingUser && st.readyCode == info.versionCode && !st.needsPermission && hasOpenSession(ctx) ->
-                RunResult.DONE
             else -> {
                 downloadAndInstall(ctx, store, release, info)
                 RunResult.DONE
@@ -163,6 +169,8 @@ object Updater {
         val store = UpdateStore(ctx)
         _busy.value = "Preparing update…"
         val st = store.state()
+        // A confirmation intent is in-memory. After process death, a user can replace a waiting session.
+        if (hasOpenSession(ctx, st) && (!st.awaitingUser || pendingConfirm != null)) return@guarded RunResult.DONE
         val cached = UpdateCore.Release.fromJson(st.release)?.let { r ->
             st.versionJson?.let { v -> runCatching { r to UpdateCore.parseVersionJson(v) }.getOrNull() }
         }
@@ -177,7 +185,7 @@ object Updater {
             redrawWidgets(ctx)
             return@guarded RunResult.DONE
         }
-        downloadAndInstall(ctx, store, release, info)
+        downloadAndInstall(ctx, store, release, info, requireConfirmation = true)
         RunResult.DONE
     }
 
@@ -198,7 +206,7 @@ object Updater {
                     outcome = if (weInstalled) CheckOutcome.INSTALLED else it.outcome,
                     message = if (weInstalled) "Updated to $installedName" else it.message,
                     readyCode = 0, readyPath = null, awaitingUser = false, needsPermission = false,
-                    installingCode = 0, failedCode = 0,
+                    installingCode = 0, installingSessionId = null, failedCode = 0,
                 )
             }
             pendingConfirm = null
@@ -222,7 +230,7 @@ object Updater {
         val confirm = pendingConfirm
         if (confirm != null && pendingConfirmCode > installedCode) {
             try {
-                activity.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                activity.startActivity(confirm)
                 return
             } catch (e: Exception) {
                 Log.w(TAG, "confirmation intent failed, starting a new session: $e")
@@ -269,32 +277,35 @@ object Updater {
 
     // ------------------------------------------------------------------ install results (from InstallReceiver)
 
-    internal suspend fun onPendingUserAction(context: Context, code: Int, confirm: Intent?) {
+    internal suspend fun onPendingUserAction(context: Context, code: Int, sessionId: Int, confirm: Intent?) = mutex.withLock {
         val ctx = context.applicationContext
         val store = UpdateStore(ctx)
         val st = store.state()
+        if (!st.isInstalling(code, sessionId)) return@withLock
         val name = st.latestName?.takeIf { st.latestCode == code } ?: "the update"
         pendingConfirm = confirm
         pendingConfirmCode = code
         store.update {
             it.copy(outcome = CheckOutcome.READY, awaitingUser = true, needsPermission = false, message = "$name is ready; confirm the install")
         }
-        redrawWidgets(ctx)
-        val launched = confirm != null && uiVisible && runCatching {
-            ctx.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.isSuccess
+        val launched = withContext(Dispatchers.Main.immediate) {
+            val activity = resumedSettings?.get()
+            activity != null && confirm != null && runCatching { activity.startActivity(confirm) }.isSuccess
+        }
         if (!launched) UpdateNotifier.ready(ctx, name, st.latestNotes)
+        redrawWidgets(ctx)
     }
 
-    internal suspend fun onInstallFinished(context: Context, code: Int, status: Int, message: String?) {
+    internal suspend fun onInstallFinished(context: Context, code: Int, sessionId: Int, status: Int, message: String?) = mutex.withLock {
         val ctx = context.applicationContext
         val store = UpdateStore(ctx)
+        if (!store.state().isInstalling(code, sessionId)) return@withLock
         pendingConfirm = null
         if (status == PackageInstaller.STATUS_SUCCESS) {
             // Usually not delivered (this process is replaced first); reconcile() in the new version reports it.
             store.update { it.copy(installingCode = code) }
             reconcile(ctx)
-            return
+            return@withLock
         }
         val aborted = status == PackageInstaller.STATUS_FAILURE_ABORTED
         val signature = UpdateCore.isSignatureMismatch(message)
@@ -303,8 +314,8 @@ object Updater {
         store.update {
             it.copy(
                 outcome = if (aborted) CheckOutcome.READY else CheckOutcome.ERROR,
-                message = if (aborted) "Install cancelled. Tap Install to try again." else "Install failed: $reason",
-                installingCode = 0, failedCode = code,
+                message = UpdateCore.installFailureMessage(status, message),
+                installingCode = 0, installingSessionId = null, failedCode = code,
                 // Cancelled: keep the verified APK and the widget dot. A signature mismatch can never succeed.
                 awaitingUser = aborted,
                 readyCode = if (signature) 0 else it.readyCode,
@@ -342,7 +353,7 @@ object Updater {
                         it.copy(
                             lastCheckAt = System.currentTimeMillis(), outcome = CheckOutcome.ERROR, message = e.message,
                             failedCode = if (e.permanent) e.versionCode else it.failedCode,
-                            awaitingUser = false, needsPermission = false, installingCode = 0,
+                            awaitingUser = false, needsPermission = false, installingCode = 0, installingSessionId = null,
                             readyCode = 0, readyPath = null,
                         )
                     }
@@ -449,7 +460,10 @@ object Updater {
         runCatching { File(ctx.cacheDir, "updates").listFiles()?.forEach { it.delete() } }
     }
 
-    private suspend fun downloadAndInstall(ctx: Context, store: UpdateStore, release: UpdateCore.Release, info: UpdateCore.VersionInfo) {
+    private suspend fun downloadAndInstall(
+        ctx: Context, store: UpdateStore, release: UpdateCore.Release, info: UpdateCore.VersionInfo,
+        requireConfirmation: Boolean = false,
+    ) {
         val file = apkFile(ctx, info.versionCode)
         val st = store.state()
         val reuse = st.readyCode == info.versionCode && file.isFile &&
@@ -472,10 +486,10 @@ object Updater {
                 )
             }
             redrawWidgets(ctx)
-            if (!uiVisible) UpdateNotifier.ready(ctx, info.versionName, "Allow T3 Widget to install updates, then tap Install.")
+            if (resumedSettings?.get() == null) UpdateNotifier.ready(ctx, info.versionName, "Allow T3 Widget to install updates, then tap Install.")
             return
         }
-        commit(ctx, store, file, info)
+        commit(ctx, store, file, info, requireConfirmation)
     }
 
     private fun download(url: String, dest: File, info: UpdateCore.VersionInfo) {
@@ -577,11 +591,13 @@ object Updater {
         return sigs.map { UpdateCore.toHex(md.digest(it.toByteArray())) }.toSet()
     }
 
-    private fun hasOpenSession(ctx: Context): Boolean =
-        runCatching { ctx.packageManager.packageInstaller.mySessions.isNotEmpty() }.getOrDefault(false)
+    private fun hasOpenSession(ctx: Context, state: UpdateState): Boolean {
+        val sessionId = state.installingSessionId ?: return false
+        return ctx.packageManager.packageInstaller.getSessionInfo(sessionId) != null
+    }
 
     /** Stream the APK into a session (hashing what is written), then commit. Abandons on any problem. */
-    private suspend fun commit(ctx: Context, store: UpdateStore, file: File, info: UpdateCore.VersionInfo) {
+    private suspend fun commit(ctx: Context, store: UpdateStore, file: File, info: UpdateCore.VersionInfo, requireConfirmation: Boolean) {
         val installer = ctx.packageManager.packageInstaller
         // Only one of our sessions at a time.
         runCatching { installer.mySessions.forEach { s -> runCatching { installer.abandonSession(s.sessionId) } } }
@@ -591,10 +607,11 @@ object Updater {
             setAppPackageName(ctx.packageName)
             setSize(file.length())
             setInstallReason(PackageManager.INSTALL_REASON_USER)
-            // Silent once allowed: this app updating itself (or being the installer of record) with the permission.
-            if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-            // Become the update owner so other stores/file managers can't silently replace it, and later updates stay silent.
-            if (Build.VERSION.SDK_INT >= 34) setRequestUpdateOwnership(true)
+            if (Build.VERSION.SDK_INT >= 31) {
+                val userAction = if (requireConfirmation) PackageInstaller.SessionParams.USER_ACTION_REQUIRED
+                else PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+                setRequireUserAction(userAction)
+            }
         }
         _busy.value = "Installing ${info.versionName}…"
         val sessionId = installer.createSession(params)
@@ -620,19 +637,29 @@ object Updater {
                     throw UpdateFailure("APK changed after download and failed the SHA-256 check; not installed", info.versionCode)
                 }
                 store.update {
-                    it.copy(installingCode = info.versionCode, outcome = CheckOutcome.INSTALLING, message = "Installing ${info.versionName}…")
+                    it.copy(
+                        installingCode = info.versionCode, installingSessionId = sessionId,
+                        awaitingUser = false, needsPermission = false,
+                        outcome = CheckOutcome.INSTALLING, message = "Installing ${info.versionName}…",
+                    )
                 }
                 val intent = Intent(ctx, InstallReceiver::class.java)
                     .setAction(InstallReceiver.ACTION_STATUS)
                     .setPackage(ctx.packageName)
                     .putExtra(InstallReceiver.EXTRA_VERSION_CODE, info.versionCode)
+                    .putExtra(InstallReceiver.EXTRA_SESSION_ID, sessionId)
                 val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
                 val sender = PendingIntent.getBroadcast(ctx, sessionId, intent, flags)
                 session.commit(sender.intentSender)
                 committed = true
             }
         } finally {
-            if (!committed) runCatching { installer.abandonSession(sessionId) }
+            if (!committed) {
+                runCatching { installer.abandonSession(sessionId) }
+                store.update {
+                    if (it.isInstalling(info.versionCode, sessionId)) it.copy(installingCode = 0, installingSessionId = null) else it
+                }
+            }
         }
     }
 

@@ -89,6 +89,7 @@ class SettingsActivity : ComponentActivity() {
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
     /** A parsed setup link waiting for the user's confirmation. */
     private val pendingSetup = MutableStateFlow<SetupLink.Result?>(null)
+    private var installRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -135,26 +136,26 @@ class SettingsActivity : ComponentActivity() {
         handleInstallIntent(intent)
     }
 
-    override fun onStart() {
-        super.onStart()
-        Updater.uiVisible = true
-    }
-
     override fun onResume() {
         super.onResume()
+        Updater.attachSettings(this)
+        if (installRequested) {
+            installRequested = false
+            Updater.promptInstall(this)
+        }
         // Coming back from "Install unknown apps": continue a waiting install.
         lifecycleScope.launch { Updater.onSettingsResumed(applicationContext) }
     }
 
-    override fun onStop() {
-        Updater.uiVisible = false
-        super.onStop()
+    override fun onPause() {
+        Updater.detachSettings(this)
+        super.onPause()
     }
 
     /** "Update ready" notification / widget dot: show the installer confirmation (or start the install). */
     private fun handleInstallIntent(intent: Intent?) {
         if (intent?.action != ACTION_INSTALL_UPDATE) return
-        Updater.promptInstall(this)
+        installRequested = true
     }
 
     private fun handleSetupIntent(intent: Intent?) {

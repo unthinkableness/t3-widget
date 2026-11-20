@@ -127,6 +127,13 @@ object UpdateCore {
             "inconsistent_certificates" in m || "no_certificates" in m
     }
 
+    fun installFailureMessage(status: Int, message: String?): String {
+        val reason = describeInstallFailure(status, message)
+        return if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
+            "Android stopped the install: $reason. Tap Install to try again."
+        } else "Install failed: $reason"
+    }
+
     /** Human wording for a PackageInstaller failure status (+ its EXTRA_STATUS_MESSAGE). */
     fun describeInstallFailure(status: Int, message: String?): String {
         if (isSignatureMismatch(message)) {

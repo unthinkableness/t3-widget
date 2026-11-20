@@ -41,6 +41,7 @@ data class UpdateState(
     val needsPermission: Boolean = false,
     /** Set when a session was committed, to report success after the app restarts as the new version. */
     val installingCode: Int = 0,
+    val installingSessionId: Int? = null,
     /** A version whose install failed or was declined: automatic checks don't retry it, the button does. */
     val failedCode: Int = 0,
     /** Version already announced with an "Update available" notification (auto-install off). */
@@ -54,6 +55,9 @@ data class UpdateState(
     /** The version.json fetched for [release], so a 304 needs no second request. */
     val versionJson: String? = null,
 ) {
+    fun isInstalling(code: Int, sessionId: Int): Boolean =
+        installingCode == code && installingSessionId == sessionId
+
     fun toJson(): String = JSONObject().apply {
         put("lastCheckAt", lastCheckAt)
         put("outcome", outcome.name)
@@ -66,6 +70,7 @@ data class UpdateState(
         put("awaitingUser", awaitingUser)
         put("needsPermission", needsPermission)
         put("installingCode", installingCode)
+        putOpt("installingSessionId", installingSessionId)
         put("failedCode", failedCode)
         put("notifiedCode", notifiedCode)
         put("failures", failures)
@@ -93,6 +98,7 @@ data class UpdateState(
                     awaitingUser = o.optBoolean("awaitingUser"),
                     needsPermission = o.optBoolean("needsPermission"),
                     installingCode = o.optInt("installingCode"),
+                    installingSessionId = o.optInt("installingSessionId", -1).takeIf { it >= 0 },
                     failedCode = o.optInt("failedCode"),
                     notifiedCode = o.optInt("notifiedCode"),
                     failures = o.optInt("failures"),

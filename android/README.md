@@ -157,6 +157,6 @@ The app updates itself from this repo's GitHub releases (`UpdateCore.REPO`).
 
 - It checks `releases/latest` every 6 hours, when the app opens (at most every 10 minutes) and from **Check for updates** in settings. It sends an ETag, so an unchanged release costs one cheap request.
 - A release needs the `t3-widget.apk` and `version.json` assets (`versionCode`, `versionName`, `sha256`, `notes`, `minSdk`). `release.ps1` at the repo root builds and publishes both.
-- The APK is installed only if its SHA-256, package name, versionCode and signing cert all match. The install uses PackageInstaller with update ownership, so after the first self-update, later ones can install without a prompt.
+- The APK is installed only if its SHA-256, package name, versionCode and signing cert all match. Automatic updates can install without a prompt when Android permits it. Tapping **Install** requests the Android confirmation screen.
 - **Auto-install updates** (on by default) installs as soon as an update is downloaded. When it's off, you get an "Update available" notification instead. A blue dot on the T3 tile means an update is waiting for you to confirm the install.
 - On Samsung phones, Auto Blocker must be off, and T3 Widget needs "Install unknown apps" permission.

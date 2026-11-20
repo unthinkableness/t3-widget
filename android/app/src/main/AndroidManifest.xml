@@ -8,11 +8,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- Self-updater: install our own APK ("Install unknown apps" for T3 Widget), silently once allowed (API 31+),
-         and become the update owner (API 34+). -->
+    <!-- Self-updater: request permission to install our own APK and allow automatic updates when Android permits. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
-    <uses-permission android:name="android.permission.ENFORCE_UPDATE_OWNERSHIP" />
 
     <!-- Package visibility (Android 11+) so the widget can find, launch and deep-link into the T3 app. -->
     <queries>

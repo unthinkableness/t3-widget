@@ -179,18 +179,33 @@ class UpdateCoreTest {
         assertEquals("Install failed (status 99)", UpdateCore.describeInstallFailure(99, null))
     }
 
+    @Test fun anAbortedInstallKeepsAndroidsReasonInTheSettingsMessage() {
+        val reason = "INSTALL_FAILED_ABORTED: Session was abandoned"
+        val message = UpdateCore.installFailureMessage(PackageInstaller.STATUS_FAILURE_ABORTED, reason)
+        assertTrue(message, message.contains(reason))
+    }
+
     // ---- persisted state
 
     @Test fun updateStateRoundTrips() {
         val s = UpdateState(
             lastCheckAt = 123, outcome = CheckOutcome.READY, message = "0.4.0 ready", latestCode = 4,
             latestName = "0.4.0", latestNotes = "notes", readyCode = 4, readyPath = "/cache/updates/t3-widget-4.apk",
-            awaitingUser = true, needsPermission = true, installingCode = 4, failedCode = 2, notifiedCode = 4,
+            awaitingUser = true, needsPermission = true, installingCode = 4, installingSessionId = 9,
+            failedCode = 2, notifiedCode = 4,
             failures = 3, nextAutoCheckAt = 456, etag = "W/\"abc\"", release = "{}", versionJson = "{\"a\":1}",
         )
         assertEquals(s, UpdateState.fromJson(s.toJson()))
         assertEquals(UpdateState(), UpdateState.fromJson(UpdateState().toJson()))
         assertEquals(UpdateState(), UpdateState.fromJson(null))
         assertEquals(UpdateState(), UpdateState.fromJson("garbage"))
+    }
+
+    @Test fun ignoresTheAbandonedAttemptAfterRetryingTheSameVersion() {
+        val active = UpdateState(installingCode = 5, installingSessionId = 22)
+        assertFalse(active.isInstalling(5, 21))
+        assertFalse(active.isInstalling(4, 22))
+        assertTrue(active.isInstalling(5, 22))
+        assertFalse(UpdateState.fromJson("""{"installingCode":5}""").isInstalling(5, 22))
     }
 }
