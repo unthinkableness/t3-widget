@@ -73,7 +73,7 @@ private val Blue = Color(0xFF4DA3FF)
 private val Amber = Color(0xFFF5A524)
 private val Red = Color(0xFFEF5350)
 
-/** No successful refresh for this long = "stale". Periodic work runs every 15 min; the live service writes every 5-15. */
+/** No successful refresh for this long = "stale". The live service also resyncs every 30 min. */
 private const val STALE_MS = 40 * 60_000L
 
 class T3Widget : GlanceAppWidget() {

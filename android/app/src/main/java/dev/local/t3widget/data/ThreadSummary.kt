@@ -119,16 +119,22 @@ object ThreadMapping {
      *  - Windows at 100% left are hidden. Exhausted windows get highest priority.
      *  - Of the visible windows, the provider shows the one with the highest urgency.
      */
-    fun usageBars(config: JSONObject, now: Long = System.currentTimeMillis()): List<UsageBar> {
+    fun usageBars(config: JSONObject, now: Long = System.currentTimeMillis()): List<UsageBar> =
+        usageBars(config.optJSONArray("providers"), now)
+
+    fun usageBars(providers: JSONArray?, now: Long = System.currentTimeMillis()): List<UsageBar> {
         val bars = ArrayList<UsageBar>()
-        for (p in config.optJSONArray("providers").objects()) {
+        for (p in providers.objects()) {
             val name = PROVIDER_NAMES[p.optString("instanceId")] ?: continue
             if (!p.optBoolean("enabled")) continue
             val windows = p.optJSONObject("usageLimits")?.optJSONArray("windows").objects()
                 .filterNot { it.optString("id").startsWith("3p-") }
+            // Gemini exposes model-specific weekly windows alongside the shared allowance.
+            val weekly = windows.firstOrNull { name == "Gemini" && it.optString("id") == "gemini-weekly" }
+                ?: windows.firstOrNull { it.optString("kind") == "weekly" }
             val candidates = listOfNotNull(
                 windows.firstOrNull { it.optString("kind") == "session" }?.let { "$name 5h" to it },
-                windows.firstOrNull { it.optString("kind") == "weekly" }?.let { "$name wk" to it },
+                weekly?.let { "$name wk" to it },
             )
             candidates
                 .mapNotNull { (label, w) ->

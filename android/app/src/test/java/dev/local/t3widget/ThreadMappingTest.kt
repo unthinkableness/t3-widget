@@ -2,6 +2,7 @@ package dev.local.t3widget
 
 import dev.local.t3widget.data.ErrorKind
 import dev.local.t3widget.data.ShellModel
+import dev.local.t3widget.data.T3Api
 import dev.local.t3widget.data.ThreadMapping
 import dev.local.t3widget.data.UsageBar
 import dev.local.t3widget.data.UsageWindowTiming
@@ -105,6 +106,36 @@ class ThreadMappingTest {
         ))
         assertEquals("Gemini 5h", bars.single().label)
         assertEquals(0, bars.single().percentLeft)
+    }
+
+    @Test fun aLiveQuotaPushReplacesTheInitialGeminiReading() {
+        fun providers(used: Int) = limits(
+            """{"id":"gemini-5h","kind":"session","usedPercent":$used}""",
+            """{"id":"gemini-weekly","kind":"weekly","usedPercent":77.6}""",
+        ).getJSONArray("providers")
+
+        val snapshot = JSONObject("""{"values":[{"type":"snapshot","config":{"providers":${providers(88)}}}]}""")
+        val push = JSONObject("""{"values":[{"type":"providerStatuses","payload":{"providers":${providers(100)}}}]}""")
+        fun percentLeft(chunk: JSONObject): Int {
+            val bar = ThreadMapping.usageBars(T3Api.usageProvidersFromChunk(chunk)).single()
+            assertEquals("Gemini 5h", bar.label)
+            return bar.percentLeft
+        }
+        assertEquals(12, percentLeft(snapshot))
+        assertEquals(0, percentLeft(push))
+        val batched = JSONObject().put("values", snapshot.getJSONArray("values")
+            .put(push.getJSONArray("values").getJSONObject(0)).put(JSONObject("""{"type":"settingsUpdated"}""")))
+        assertEquals(0, percentLeft(batched))
+    }
+
+    @Test fun geminiWeeklyBarUsesTheSharedQuota() {
+        val bars = ThreadMapping.usageBars(limits(
+            """{"id":"gemini-5h","kind":"session","usedPercent":0}""",
+            """{"id":"gemini-argon-wtu-weekly","kind":"weekly","usedPercent":0}""",
+            """{"id":"gemini-weekly","kind":"weekly","usedPercent":77.6}""",
+        ))
+        assertEquals("Gemini wk", bars.single().label)
+        assertEquals(22, bars.single().percentLeft)
     }
 
     @Test fun fastBurnBeatsHigherButSlowWindow() {

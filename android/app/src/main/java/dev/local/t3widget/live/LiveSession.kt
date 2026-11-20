@@ -42,8 +42,8 @@ import kotlin.random.Random
  * server stops sending. We send app-level `Ping` (server answers `Pong`) plus OkHttp WebSocket pings, and treat
  * silence as a dead socket.
  *
- * Usage limits are re-read every 5 min (15 min while the screen is off) with a short `subscribeServerConfig`
- * request on the same socket. A full HTTP resync runs every 30 min as a safety net.
+ * `subscribeServerConfig` stays open on the same socket so quota changes can be applied as they arrive.
+ * A full HTTP shell resync runs every 30 min as a safety net.
  *
  * All state is confined to the coroutine running [run]; the OkHttp listener only posts into a channel.
  */
@@ -55,10 +55,8 @@ class LiveSession(private val context: Context) {
     private val store = Store(context)
     private val model = ShellModel()
     private var usage: List<UsageBar> = emptyList()
-    private var usageAt = 0L
     private var nextId = 1L
 
-    @Volatile var screenOn: Boolean = true
     /** Called with true/false as the socket connects/disconnects. */
     var onConnectedChanged: (Boolean) -> Unit = {}
 
@@ -103,10 +101,9 @@ class LiveSession(private val context: Context) {
         val first = repo.fetchShell()
         model.reset(first.shell)
         val resolved = first.resolved
-        repo.usage(resolved.endpoint)?.let { usage = it; usageAt = System.currentTimeMillis() }
         publish(resolved, force = true)
         repo.refreshTunnelHostname(resolved.endpoint)
-        stream(settings, repo, resolved)
+        stream(settings, resolved)
     }
 
     private sealed interface Ev {
@@ -116,8 +113,7 @@ class LiveSession(private val context: Context) {
         data class Failed(val t: Throwable, val code: Int?) : Ev
     }
 
-    private suspend fun stream(settings: Settings, repo: RemoteT3Repository, start: EndpointResolver.Resolved) {
-        var resolved = start
+    private suspend fun stream(settings: Settings, resolved: EndpointResolver.Resolved) {
         val netAtConnect = currentNetClass(context)
         val events = Channel<Ev>(Channel.UNLIMITED)
         val client = T3Api.client.newBuilder()
@@ -148,6 +144,15 @@ class LiveSession(private val context: Context) {
 
         var shellReq = subscribe()
         var usageReq: String? = null
+        var usageDeadline = 0L
+        var lastUsageUpdate = 0L
+        fun subscribeUsage(now: Long) {
+            usageReq?.let { ws.send(interrupt(it)) }
+            val id = (nextId++).toString()
+            ws.send(T3Api.serverConfigRequest(id))
+            usageReq = id
+            usageDeadline = now + USAGE_SNAPSHOT_TIMEOUT_MS
+        }
         var connected = false
         var lastRx = System.currentTimeMillis()
         var lastPing = lastRx
@@ -165,14 +170,11 @@ class LiveSession(private val context: Context) {
                 if (now - lastPing >= PING_MS) {
                     ws.send(PING); lastPing = now
                 }
-                if (connected && usageReq == null && now - usageAt >= usageIntervalMs()) {
-                    usageReq = (nextId++).toString()
-                    ws.send(T3Api.serverConfigRequest(usageReq))
-                    usageAt = now // attempt time; a failed attempt waits a full interval
-                }
+                if (connected && usageDeadline in 1..now) subscribeUsage(now)
                 if (connected && now - lastResync >= RESYNC_MS) {
                     lastResync = now
                     resync(settings.token, resolved)
+                    if (usageDeadline == 0L && now - lastUsageUpdate >= RESYNC_MS) subscribeUsage(now)
                     publishAt = now
                 }
 
@@ -180,7 +182,7 @@ class LiveSession(private val context: Context) {
                     publishAt.takeIf { it > 0 },
                     lastPing + PING_MS,
                     lastRx + SILENCE_MS,
-                    if (connected && usageReq == null) usageAt + usageIntervalMs() else null,
+                    usageDeadline.takeIf { connected && it > 0 },
                     if (connected) lastResync + RESYNC_MS else null,
                 )
                 val waitMs = (deadlines.min() - System.currentTimeMillis()).coerceIn(10, 60_000)
@@ -197,6 +199,7 @@ class LiveSession(private val context: Context) {
                         connected = true
                         lastRx = System.currentTimeMillis()
                         onConnectedChanged(true)
+                        subscribeUsage(lastRx)
                         publishAt = System.currentTimeMillis()
                     }
                     is Ev.Text -> {
@@ -223,14 +226,13 @@ class LiveSession(private val context: Context) {
                                 if (publishAt == 0L) publishAt = System.currentTimeMillis() + DEBOUNCE_MS
                             }
                             tag == "Chunk" && rid == usageReq -> {
-                                ws.send(interrupt(rid))
-                                usageReq = null
-                                T3Api.configFromChunk(msg)?.let {
+                                ws.send(ack(rid))
+                                T3Api.usageProvidersFromChunk(msg)?.let {
                                     usage = ThreadMapping.usageBars(it)
-                                    usageAt = System.currentTimeMillis()
+                                    usageDeadline = 0L
+                                    lastUsageUpdate = lastRx
+                                    publishAt = lastRx
                                 }
-                                // Also a heartbeat: refreshes updatedAt so a quiet-but-live widget never looks stale.
-                                publish(resolved, force = true)
                             }
                             tag == "Exit" && rid == shellReq -> {
                                 val fail = T3Api.rpcFailure(msg)
@@ -239,6 +241,7 @@ class LiveSession(private val context: Context) {
                             }
                             tag == "Exit" && rid == usageReq -> {
                                 usageReq = null
+                                usageDeadline = lastRx + USAGE_RETRY_MS
                                 if (msg.optJSONObject("exit")?.optString("_tag") == "Failure") {
                                     Log.w(TAG, "usage request failed")
                                 }
@@ -260,15 +263,15 @@ class LiveSession(private val context: Context) {
                         }
                         Kick.USER_PRESENT -> {
                             ws.send(PING); lastPing = System.currentTimeMillis()
-                            if (connected && usageReq == null && System.currentTimeMillis() - usageAt > 2 * 60_000L) {
-                                usageAt = 0 // request on the next loop pass
+                            if (connected && usageDeadline == 0L && lastPing - lastUsageUpdate >= USAGE_WAKE_REFRESH_MS) {
+                                subscribeUsage(lastPing)
                             }
                             publishAt = System.currentTimeMillis()
                         }
                         Kick.MANUAL -> {
                             resync(settings.token, resolved)
                             lastResync = System.currentTimeMillis()
-                            if (connected && usageReq == null) usageAt = 0
+                            if (connected) subscribeUsage(lastResync)
                             publishAt = System.currentTimeMillis()
                         }
                     }
@@ -294,14 +297,15 @@ class LiveSession(private val context: Context) {
         Refresher.publish(context, next)
     }
 
-    private fun usageIntervalMs() = if (screenOn) 5 * 60_000L else 15 * 60_000L
-
     companion object {
         private const val TAG = "T3Live"
         const val DEBOUNCE_MS = 1_500L
         private const val PING_MS = 25_000L
         private const val SILENCE_MS = 80_000L
         private const val RESYNC_MS = 30 * 60_000L
+        private const val USAGE_SNAPSHOT_TIMEOUT_MS = 15_000L
+        private const val USAGE_RETRY_MS = 30_000L
+        private const val USAGE_WAKE_REFRESH_MS = 60_000L
         private const val PING = """{"_tag":"Ping"}"""
         private const val PONG = """{"_tag":"Pong"}"""
 

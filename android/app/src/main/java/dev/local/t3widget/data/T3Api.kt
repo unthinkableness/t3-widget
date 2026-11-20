@@ -130,6 +130,16 @@ object T3Api {
     fun configFromChunk(msg: JSONObject): JSONObject? =
         msg.optJSONArray("values").objects().firstOrNull { it.optString("type") == "snapshot" }?.optJSONObject("config")
 
+    /** A config snapshot and a provider-status update each contain the full providers list. */
+    fun usageProvidersFromChunk(msg: JSONObject): JSONArray? =
+        msg.optJSONArray("values").objects().asReversed().firstNotNullOfOrNull { event ->
+            when (event.optString("type")) {
+                "snapshot" -> event.optJSONObject("config")?.optJSONArray("providers")
+                "providerStatuses" -> event.optJSONObject("payload")?.optJSONArray("providers")
+                else -> null
+            }
+        }
+
     fun rpcFailure(msg: JSONObject): ApiException {
         val text = msg.toString()
         return if (text.contains("EnvironmentAuthorizationError") || text.contains("insufficient_scope"))

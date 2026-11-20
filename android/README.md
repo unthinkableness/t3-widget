@@ -101,8 +101,8 @@ A foreground service ("Live updates", on by default, toggle in Settings) holds o
    (Effect RPC flow control: without it the server stops after the first chunk).
 3. Deltas are applied to the model; the widget is recomputed at most every 1.5 s and only redrawn when something
    changed (or as a heartbeat).
-4. Usage limits: a short `subscribeServerConfig` request on the same socket every 5 min (15 min while the screen is
-   off), first chunk then `Interrupt`. This also refreshes "updated" so a quiet-but-live widget never looks stale.
+4. Usage limits: keep `subscribeServerConfig` open on the same socket. Apply the initial snapshot and each provider
+   status update, acknowledging every chunk. Unlocking after a quiet period requests a fresh snapshot.
 5. Keep-alive: app-level `{"_tag":"Ping"}` every 25 s (server answers `Pong`), OkHttp WebSocket pings every 30 s,
    80 s of silence = dead socket → reconnect. Full HTTP resync every 30 min as a safety net.
 
@@ -146,7 +146,7 @@ The 4x2 header shows `● 2m` while the live socket is connected, `↻ 2m` other
 | `data/RemoteT3Repository.kt` | One-shot fetch with failover, tunnel-hostname refresh |
 | `data/FakeT3Repository.kt` | Demo data (drifts each minute) |
 | `data/Store.kt`, `data/TokenVault.kt` | DataStore + Keystore-encrypted token |
-| `live/LiveSession.kt` | The long-lived socket, deltas, debounce, usage polling, keep-alive |
+| `live/LiveSession.kt` | The long-lived socket, thread and usage updates, debounce, keep-alive |
 | `live/LiveUpdateService.kt` | Foreground service, notification, network/unlock signals, boot receiver |
 | `work/Refresher.kt` | One-shot refresh with retry, WorkManager scheduling/watchdog |
 | `widget/T3Widget.kt` | Glance UI (4x1 compact, 4x2 tall), receiver, tap actions |

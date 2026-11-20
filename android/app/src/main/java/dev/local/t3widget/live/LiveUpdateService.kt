@@ -16,7 +16,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -39,7 +38,7 @@ import kotlinx.coroutines.launch
 /**
  * "Live updates" foreground service (type specialUse; dataSync has a daily cap on Android 15+).
  * Holds one [LiveSession] socket while at least one widget exists and the toggle is on.
- * Also listens for network changes, unlock (USER_PRESENT) and screen on/off while it runs.
+ * Also listens for network changes and unlock (USER_PRESENT) while it runs.
  */
 class LiveUpdateService : Service() {
 
@@ -55,7 +54,6 @@ class LiveUpdateService : Service() {
         goForeground(WidgetState.EMPTY)
         instance = this
         session = LiveSession(applicationContext).apply {
-            screenOn = getSystemService(PowerManager::class.java)?.isInteractive ?: true
             onConnectedChanged = { connected ->
                 isConnected = connected
             }
@@ -117,15 +115,11 @@ class LiveUpdateService : Service() {
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
                     Intent.ACTION_USER_PRESENT -> session.kick(LiveSession.Kick.USER_PRESENT)
-                    Intent.ACTION_SCREEN_ON -> session.screenOn = true
-                    Intent.ACTION_SCREEN_OFF -> session.screenOn = false
                 }
             }
         }.also {
             val filter = IntentFilter().apply {
                 addAction(Intent.ACTION_USER_PRESENT)
-                addAction(Intent.ACTION_SCREEN_ON)
-                addAction(Intent.ACTION_SCREEN_OFF)
             }
             ContextCompat.registerReceiver(this, it, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
