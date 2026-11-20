@@ -18,8 +18,8 @@ android {
         applicationId = "dev.local.t3widget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.6.0"
+        versionCode = 8
+        versionName = "0.6.1"
         buildConfigField("String", "T3_APP_PACKAGES", "\"${t3AppPackages.joinToString(",")}\"")
     }
 
