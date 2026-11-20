@@ -2,13 +2,25 @@ package dev.local.t3widget.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
- * One usage/limit bar, e.g. "Claude 5h" at 72%.
- * [urgency] ranks bars: it blends [percent] with how fast the window is burning
- * (projected use by reset time), so it can exceed 100. Defaults to [percent].
+ * One usage/limit bar. [urgency] ranks bars by use and projected use at reset.
  */
-data class UsageBar(val label: String, val percent: Int, val urgency: Int = percent)
+data class UsageBar(
+    val label: String,
+    val usedPercent: Double,
+    val urgency: Int = usedPercent.toInt(),
+    val timing: UsageWindowTiming? = null,
+) {
+    val remainingFraction: Float get() = ((100.0 - usedPercent) / 100.0).coerceIn(0.0, 1.0).toFloat()
+    val percentLeft: Int get() = ((100.0 - usedPercent).coerceIn(0.0, 100.0)).roundToInt()
+}
+
+data class UsageWindowTiming(val resetsAt: Long, val durationMs: Long) {
+    fun evenPaceRemaining(now: Long): Double =
+        ((resetsAt.toDouble() - now) / durationMs).coerceIn(0.0, 1.0)
+}
 
 /** Why the last refresh failed. Drives the widget's wording and colour. */
 enum class ErrorKind {
@@ -67,7 +79,18 @@ data class WidgetState(
         put("needsYou", needsYou)
         put("topNeedsYouTitle", topNeedsYouTitle ?: JSONObject.NULL)
         put("usage", JSONArray().apply {
-            usage.forEach { put(JSONObject().put("label", it.label).put("percent", it.percent).put("urgency", it.urgency)) }
+            usage.forEach { bar ->
+                put(JSONObject().apply {
+                    put("label", bar.label)
+                    // Existing caches store percent used under this key.
+                    put("percent", bar.usedPercent)
+                    put("urgency", bar.urgency)
+                    bar.timing?.let {
+                        put("resetsAt", it.resetsAt)
+                        put("durationMs", it.durationMs)
+                    }
+                })
+            }
         })
         put("updatedAt", updatedAt)
         put("error", error ?: JSONObject.NULL)
@@ -92,7 +115,17 @@ data class WidgetState(
                     topNeedsYouTitle = o.optStringOrNull("topNeedsYouTitle"),
                     usage = (0 until arr.length()).map {
                         val b = arr.getJSONObject(it)
-                        UsageBar(b.getString("label"), b.getInt("percent"), b.optInt("urgency", b.getInt("percent")))
+                        val used = b.getDouble("percent")
+                        require(used.isFinite())
+                        val durationMs = b.optLong("durationMs")
+                        UsageBar(
+                            label = b.getString("label"),
+                            usedPercent = used,
+                            urgency = b.optInt("urgency", used.toInt()),
+                            timing = if (b.has("resetsAt") && durationMs > 0) {
+                                UsageWindowTiming(b.getLong("resetsAt"), durationMs)
+                            } else null,
+                        )
                     },
                     updatedAt = o.optLong("updatedAt"),
                     error = o.optStringOrNull("error"),

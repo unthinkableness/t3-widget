@@ -1,15 +1,21 @@
 package dev.local.t3widget.widget
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import android.content.Intent
@@ -29,6 +35,7 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
@@ -53,6 +60,7 @@ import dev.local.t3widget.update.UpdateStore
 import dev.local.t3widget.update.UpdateWorker
 import dev.local.t3widget.update.Updater
 import dev.local.t3widget.work.Refresher
+import kotlin.math.roundToInt
 
 // Palette from the approved mockup (card B).
 private val CardBg = Color(0xFF1F1E21)
@@ -63,7 +71,6 @@ private val Fg = Color(0xFFF2F2F2)
 private val Muted = Color(0xFF9A9AA0)
 private val Blue = Color(0xFF4DA3FF)
 private val Amber = Color(0xFFF5A524)
-private val Green = Color(0xFF5CC36B)
 private val Red = Color(0xFFEF5350)
 
 /** No successful refresh for this long = "stale". Periodic work runs every 15 min; the live service writes every 5-15. */
@@ -147,10 +154,11 @@ class T3WidgetReceiver : GlanceAppWidgetReceiver() {
 
 private fun cp(c: Color) = ColorProvider(c)
 
-private fun barColor(pct: Int) = when {
-    pct > 85 -> Red
-    pct >= 60 -> Amber
-    else -> Green
+private fun providerColor(label: String) = when (label.substringBefore(' ')) {
+    "Claude" -> Color(0xFFD97757)
+    "Codex" -> Color(0xFF898990)
+    "Gemini" -> Color(0xFF6C9BFF)
+    else -> Muted
 }
 
 private fun ago(now: Long, then: Long): String {
@@ -215,7 +223,7 @@ private fun CompactLayout(s: WidgetState, now: Long, h: Health, actions: TapActi
                 SmallText(statusLine, if (h == Health.ERROR) Red else Muted, maxLines = 1)
                 Spacer(GlanceModifier.height(3.dp))
             }
-            UsageBars(tightest(s.usage, maxBars), dim = h.dim)
+            UsageBars(tightest(s.usage, maxBars), now, dim = h.dim)
         }
     }
 }
@@ -258,7 +266,7 @@ private fun TallLayout(s: WidgetState, now: Long, h: Health, actions: TapActions
             Spacer(GlanceModifier.height(4.dp))
         }
         Column(modifier = GlanceModifier.fillMaxWidth().clickable(actions.refresh)) {
-            UsageBars(s.usage.take(4), dim = h.dim)
+            UsageBars(s.usage.take(4), now, dim = h.dim)
         }
     }
 }
@@ -287,7 +295,7 @@ private fun errorLabel(s: WidgetState): String = when (s.errorKind) {
 private fun tightest(usage: List<UsageBar>, n: Int) = usage.sortedByDescending { it.urgency }.take(n)
 
 @Composable
-private fun UsageBars(bars: List<UsageBar>, dim: Boolean) {
+private fun UsageBars(bars: List<UsageBar>, now: Long, dim: Boolean) {
     bars.forEachIndexed { i, b ->
         if (i > 0) Spacer(GlanceModifier.height(4.dp))
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -297,15 +305,44 @@ private fun UsageBars(bars: List<UsageBar>, dim: Boolean) {
                 style = TextStyle(color = cp(if (dim) Muted else Fg), fontSize = 11.sp),
                 maxLines = 1,
             )
-            Text("${b.percent}%", style = TextStyle(color = cp(Muted), fontSize = 11.sp), maxLines = 1)
+            Text("${b.percentLeft}% left", style = TextStyle(color = cp(Muted), fontSize = 10.sp), maxLines = 1)
         }
         Spacer(GlanceModifier.height(2.dp))
-        LinearProgressIndicator(
-            progress = b.percent.coerceIn(0, 100) / 100f,
-            modifier = GlanceModifier.fillMaxWidth().height(5.dp).cornerRadius(3.dp),
-            color = cp(if (dim) Muted else barColor(b.percent)),
-            backgroundColor = cp(TrackBg),
-        )
+        val fill = providerColor(b.label)
+        val barSize = GlanceModifier.fillMaxWidth().height(5.dp)
+        Box(modifier = barSize) {
+            LinearProgressIndicator(
+                progress = b.remainingFraction,
+                modifier = barSize.cornerRadius(3.dp),
+                color = cp(if (dim) fill.copy(alpha = 0.45f) else fill),
+                backgroundColor = cp(TrackBg),
+            )
+            b.timing?.let { timing ->
+                val pace = timing.evenPaceRemaining(now)
+                Image(
+                    provider = ImageProvider(paceMarker(pace, dim)),
+                    contentDescription = "Even pace: ${(pace * 100).roundToInt()}% left",
+                    modifier = barSize,
+                    contentScale = ContentScale.FillBounds,
+                )
+            }
+        }
+    }
+}
+
+/** Glance scales this transparent overlay to the track width chosen by the launcher. */
+private fun paceMarker(pace: Double, dim: Boolean): Bitmap {
+    val width = 320
+    val height = 10
+    val inset = 5f
+    val x = inset + (width - 2 * inset) * pace.toFloat()
+    return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = CardBg.toArgb()
+        canvas.drawRect(x - 4f, 0f, x + 4f, height.toFloat(), paint)
+        paint.color = if (dim) Muted.toArgb() else Color.White.toArgb()
+        canvas.drawRect(x - 2f, 0f, x + 2f, height.toFloat(), paint)
     }
 }
 

@@ -394,7 +394,7 @@ private fun SettingsScreen(
             buildString {
                 append("${state.running} running · ${state.needsYou} needs you\n")
                 state.topNeedsYouTitle?.let { append("Needs you: $it\n") }
-                state.usage.forEach { append("${it.label}: ${it.percent}%\n") }
+                state.usage.forEach { append("${it.label}: ${it.percentLeft}% left\n") }
                 append("Updated: ")
                 append(if (state.updatedAt > 0) DateFormat.getDateTimeInstance().format(Date(state.updatedAt)) else "never")
                 state.via?.let { append(" via $it") }

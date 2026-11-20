@@ -4,12 +4,14 @@ import dev.local.t3widget.data.ErrorKind
 import dev.local.t3widget.data.ShellModel
 import dev.local.t3widget.data.ThreadMapping
 import dev.local.t3widget.data.UsageBar
+import dev.local.t3widget.data.UsageWindowTiming
 import dev.local.t3widget.data.WidgetState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 private fun fixture(name: String): JSONObject =
     JSONObject(ThreadMappingTest::class.java.classLoader!!.getResource(name)!!.readText())
@@ -47,7 +49,7 @@ class ThreadMappingTest {
     @Test fun usageBarsOnePerProviderMostUrgentFirst() {
         val bars = ThreadMapping.usageBars(fixture("config_fixture.json"))
         assertEquals(
-            listOf(UsageBar("Codex 5h", 91), UsageBar("Claude wk", 59), UsageBar("Gemini wk", 20)),
+            listOf(UsageBar("Codex 5h", 91.0), UsageBar("Claude wk", 59.0), UsageBar("Gemini wk", 20.0)),
             bars,
         )
     }
@@ -56,25 +58,36 @@ class ThreadMappingTest {
         """{"providers":[{"instanceId":"antigravity","enabled":true,"usageLimits":{"windows":[${windows.joinToString(",")}]}}]}"""
     )
 
-    @Test fun exhaustedWindowIsSkipped() {
-        // 5h maxed, weekly 1% → show the weekly bar.
+    @Test fun showsWeeklyAtOnePercentLeftWhenSessionIsFull() {
         val bars = ThreadMapping.usageBars(limits(
-            """{"id":"gemini-5h","kind":"session","usedPercent":100}""",
-            """{"id":"gemini-weekly","kind":"weekly","usedPercent":1}""",
+            """{"id":"gemini-5h","kind":"session","usedPercent":0}""",
+            """{"id":"gemini-weekly","kind":"weekly","usedPercent":99}""",
         ))
-        assertEquals(listOf(UsageBar("Gemini wk", 1)), bars)
+        val bar = bars.single()
+        assertEquals("Gemini wk", bar.label)
+        assertEquals(1, bar.percentLeft)
+        assertEquals(0.01f, bar.remainingFraction, 0.0001f)
     }
 
-    @Test fun fullyExhaustedProviderIsHidden() {
+    @Test fun providerWithFullAllowanceIsHidden() {
         val bars = ThreadMapping.usageBars(limits(
-            """{"id":"gemini-5h","kind":"session","usedPercent":100}""",
-            """{"id":"gemini-weekly","kind":"weekly","usedPercent":100}""",
+            """{"id":"gemini-5h","kind":"session","usedPercent":0}""",
+            """{"id":"gemini-weekly","kind":"weekly","usedPercent":0}""",
         ))
         assertEquals(emptyList<UsageBar>(), bars)
     }
 
+    @Test fun exhaustedWindowIsVisibleAndTakesPriority() {
+        val bars = ThreadMapping.usageBars(limits(
+            """{"id":"gemini-5h","kind":"session","usedPercent":100}""",
+            """{"id":"gemini-weekly","kind":"weekly","usedPercent":99}""",
+        ))
+        assertEquals("Gemini 5h", bars.single().label)
+        assertEquals(0, bars.single().percentLeft)
+    }
+
     @Test fun fastBurnBeatsHigherButSlowWindow() {
-        val now = java.time.Instant.parse("2026-11-20T12:00:00Z").toEpochMilli()
+        val now = Instant.parse("2026-11-20T12:00:00Z").toEpochMilli()
         // Weekly: 60% used, 1 day into 7 → on pace for way over 100%.
         // 5h: 70% used, 4.5h into 5h → will end around 78%.
         val bars = ThreadMapping.usageBars(limits(
@@ -82,8 +95,28 @@ class ThreadMappingTest {
             """{"id":"gemini-weekly","kind":"weekly","usedPercent":60,"windowDurationMins":10080,"resetsAt":"2026-11-26T12:00:00Z"}""",
         ), now)
         assertEquals("Gemini wk", bars.single().label)
-        assertEquals(60, bars.single().percent)
+        assertEquals(40, bars.single().percentLeft)
         assert(bars.single().urgency > 70)
+    }
+
+    @Test fun evenPaceTracksTimeLeftInTheSelectedWindow() {
+        val resetAt = Instant.parse("2026-11-20T12:00:00Z").toEpochMilli()
+        val hour = 60 * 60_000L
+        val bar = ThreadMapping.usageBars(limits(
+            """{"id":"gemini-5h","kind":"session","usedPercent":12.7,"windowDurationMins":300,"resetsAt":"2026-11-20T12:00:00Z"}""",
+        ), resetAt - 2 * hour).single()
+        assertEquals(87, bar.percentLeft)
+        assertEquals(0.873f, bar.remainingFraction, 0.0001f)
+        val timing = checkNotNull(bar.timing)
+        assertEquals(1.0, timing.evenPaceRemaining(resetAt - 6 * hour), 0.0)
+        assertEquals(0.4, timing.evenPaceRemaining(resetAt - 2 * hour), 0.0001)
+        assertEquals(0.2, timing.evenPaceRemaining(resetAt - hour), 0.0001)
+        assertEquals(0.0, timing.evenPaceRemaining(resetAt + hour), 0.0)
+
+        val invalidTiming = ThreadMapping.usageBars(limits(
+            """{"id":"gemini-5h","kind":"session","usedPercent":12.7,"windowDurationMins":300,"resetsAt":"bad date"}""",
+        ), resetAt - 2 * hour).single()
+        assertNull(invalidTiming.timing)
     }
 
     @Test fun shellModelAppliesDeltas() {
@@ -123,15 +156,18 @@ class ThreadMappingTest {
 
     @Test fun widgetStateJsonRoundTrip() {
         val s = WidgetState(
-            running = 2, needsYou = 1, topNeedsYouTitle = "Widget · X", usage = listOf(UsageBar("Claude 5h", 40)),
+            running = 2, needsYou = 1, topNeedsYouTitle = "Widget · X",
+            usage = listOf(UsageBar("Claude 5h", 40.5, 56, UsageWindowTiming(18_000_000L, 18_000_000L))),
             updatedAt = 123, error = "Offline", topNeedsYouThreadId = "thread:abc", environmentId = "env-1",
             errorKind = ErrorKind.OFFLINE, via = "LAN", live = true,
         )
         assertEquals(s, WidgetState.fromJson(s.toJson()))
         // Old (v0.1) JSON still loads.
-        val old = WidgetState.fromJson("""{"running":1,"needsYou":0,"topNeedsYouTitle":null,"usage":[],"updatedAt":5,"error":null}""")
+        val old = WidgetState.fromJson("""{"running":1,"needsYou":0,"topNeedsYouTitle":null,"usage":[{"label":"Claude 5h","percent":40}],"updatedAt":5,"error":null}""")
         assertEquals(1, old.running)
         assertNull(old.errorKind)
+        assertEquals(60, old.usage.single().percentLeft)
+        assertNull(old.usage.single().timing)
         assertTrue(ErrorKind.OFFLINE.soft)
     }
 }

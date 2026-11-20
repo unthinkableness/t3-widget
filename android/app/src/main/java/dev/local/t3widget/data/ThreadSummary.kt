@@ -103,9 +103,8 @@ object ThreadMapping {
      * `config.providers[].usageLimits` → one bar per provider, most urgent first.
      *
      *  - Only the main 5h (session) and weekly windows count; `3p-*` windows are skipped.
-     *  - A window at 100% is exhausted: nothing to manage until it resets, so it's dropped.
-     *    If every window of a provider is exhausted, the provider is hidden.
-     *  - Of the remaining windows, the provider shows the one with the highest [urgency].
+     *  - Windows at 100% left are hidden. Exhausted windows get highest priority.
+     *  - Of the visible windows, the provider shows the one with the highest urgency.
      */
     fun usageBars(config: JSONObject, now: Long = System.currentTimeMillis()): List<UsageBar> {
         val bars = ArrayList<UsageBar>()
@@ -117,31 +116,41 @@ object ThreadMapping {
             val candidates = listOfNotNull(
                 windows.firstOrNull { it.optString("kind") == "session" }?.let { "$name 5h" to it },
                 windows.firstOrNull { it.optString("kind") == "weekly" }?.let { "$name wk" to it },
-            ).filter { it.second.optDouble("usedPercent", 0.0) < EXHAUSTED_PERCENT }
+            )
             candidates
-                .map { (label, w) ->
-                    val used = w.optDouble("usedPercent", 0.0).coerceIn(0.0, 100.0)
-                    UsageBar(label, used.toInt(), urgency(used, w, now))
+                .mapNotNull { (label, w) ->
+                    val percent = w.optDouble("usedPercent")
+                    if (!percent.isFinite()) return@mapNotNull null
+                    val used = percent.coerceIn(0.0, 100.0)
+                    val timing = windowTiming(w)
+                    UsageBar(label, used, urgency(used, timing, now), timing)
                 }
+                .filter { it.percentLeft < 100 }
                 .maxByOrNull { it.urgency }
                 ?.let { bars += it }
         }
         return bars.sortedByDescending { it.urgency }
     }
 
-    private const val EXHAUSTED_PERCENT = 99.5
+    private fun windowTiming(w: JSONObject): UsageWindowTiming? {
+        val mins = w.optDouble("windowDurationMins", Double.NaN)
+        if (!mins.isFinite() || mins <= 0) return null
+        val durationMs = (mins * 60_000).toLong()
+        if (durationMs <= 0) return null
+        val reset = w.optStringOrNull("resetsAt") ?: return null
+        val resetsAt = runCatching { java.time.Instant.parse(reset).toEpochMilli() }.getOrNull() ?: return null
+        return UsageWindowTiming(resetsAt, durationMs)
+    }
 
     /**
      * Blend of current use and pace. `projected` = use extrapolated to the reset time; it's
      * weighted by how far through the window we are, so a fresh window isn't flagged off a
      * few minutes of data. Falls back to plain use if reset time or duration is unknown.
      */
-    internal fun urgency(used: Double, w: JSONObject, now: Long): Int {
-        val mins = w.optDouble("windowDurationMins", Double.NaN)
-        val resetsAt = w.optStringOrNull("resetsAt")?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
-        if (resetsAt == null || mins.isNaN() || mins <= 0) return used.toInt()
-        val remaining = ((resetsAt - now) / (mins * 60_000)).coerceIn(0.0, 1.0)
-        val elapsed = 1 - remaining
+    private fun urgency(used: Double, timing: UsageWindowTiming?, now: Long): Int {
+        if (used >= 100.0) return Int.MAX_VALUE
+        if (timing == null) return used.toInt()
+        val elapsed = 1 - timing.evenPaceRemaining(now)
         val projected = (used / maxOf(elapsed, 0.25)).coerceAtMost(200.0)
         return (used * (1 - elapsed) + projected * elapsed).toInt()
     }

@@ -13,17 +13,20 @@ class FakeT3Repository(private val now: () -> Long = System::currentTimeMillis) 
         val running = (minute % 4).toInt()            // 0..3
         val needsYou = ((minute / 3) % 3).toInt()     // 0..2
         fun drift(base: Int, amp: Int, period: Double) =
-            (base + amp * sin(minute / period)).toInt().coerceIn(0, 100)
+            (base + amp * sin(minute / period)).coerceIn(0.0, 100.0)
+        fun timing(durationMs: Long) = UsageWindowTiming(t - Math.floorMod(t, durationMs) + durationMs, durationMs)
+        val session = timing(5 * 60 * 60_000L)
+        val weekly = timing(7 * 24 * 60 * 60_000L)
 
         return WidgetState(
             running = running,
             needsYou = needsYou,
             topNeedsYouTitle = if (needsYou > 0) TITLES[(minute % TITLES.size).toInt()] else null,
             usage = listOf(
-                UsageBar("Claude 5h", drift(62, 25, 7.0)),
-                UsageBar("Claude wk", drift(41, 10, 40.0)),
-                UsageBar("Gemini", drift(20, 12, 13.0)),
-                UsageBar("Codex", drift(80, 15, 9.0)),
+                UsageBar("Claude 5h", drift(62, 25, 7.0), timing = session),
+                UsageBar("Claude wk", drift(41, 10, 40.0), timing = weekly),
+                UsageBar("Gemini", drift(20, 12, 13.0), timing = weekly),
+                UsageBar("Codex", drift(80, 15, 9.0), timing = session),
             ),
             updatedAt = t,
             error = null,
