@@ -104,7 +104,7 @@ object Refresher {
             .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, req)
     }
 
-    /** Manual refresh (tap on the usage area, or Settings > Refresh now). */
+    /** Manual refresh (tap the widget status or Settings > Refresh now). */
     fun refreshNow(context: Context) {
         val req = OneTimeWorkRequestBuilder<RefreshWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(ONE_SHOT, ExistingWorkPolicy.REPLACE, req)

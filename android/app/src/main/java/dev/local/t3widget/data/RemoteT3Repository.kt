@@ -100,6 +100,7 @@ class RemoteT3Repository(
                 errorKind = null,
                 via = resolved.endpoint.kind.label,
                 live = live,
+                runningThreadId = sum.runningThreadId,
             )
     }
 }

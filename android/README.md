@@ -126,8 +126,10 @@ set battery to Unrestricted (the app asks via the system dialog; "App info" open
 | Where | Action |
 |---|---|
 | Card background | Launch T3 (`com.t3tools.t3code`, else `com.t3tools.t3code.preview`), else the server URL in a browser, else Settings |
+| "running" chip | Open the most recently updated running thread, or launch T3 when no thread is running |
 | "needs you" chip (both sizes), needs-you title row (4x2) | Open the top needs-you thread: `ACTION_VIEW https://app.t3.codes/threads/{environmentId}/{threadId}` (segments URL-encoded) targeted at the installed T3 package; without T3 installed, the plain URL. With nothing waiting, launch T3. |
-| Usage bars, `↻`/`●` time in 4x2 | Refresh now (also revives the live service) |
+| Usage bars or "Usage" label | Open Usage in the T3 app, with T3's web Usage page as a fallback |
+| Status text or `↻`/`●` time in 4x2 | Refresh now (also revives the live service) |
 
 The 4x2 header shows `● 2m` while the live socket is connected, `↻ 2m` otherwise.
 

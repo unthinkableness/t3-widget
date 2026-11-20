@@ -410,7 +410,7 @@ private fun SettingsScreen(
         )
         Text(
             "Card tap opens T3 (${T3Links.installedPackage(context) ?: "not installed"}). " +
-                "\"Needs you\" opens that thread. Usage bars refresh.",
+                "\"Running\" and \"Needs you\" open a thread. Usage bars open T3 Usage.",
             color = Faint, style = MaterialTheme.typography.bodySmall,
         )
     }

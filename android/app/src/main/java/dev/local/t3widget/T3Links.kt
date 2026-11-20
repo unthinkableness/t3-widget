@@ -27,6 +27,20 @@ object T3Links {
         return intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
+    /** T3's Usage screen uses a native scheme; its HTTPS App Links only cover threads. */
+    fun openUsage(context: Context, settings: Settings?): Intent {
+        val pm = context.packageManager
+        for (pkg in packages) {
+            val scheme = if (pkg.endsWith(".preview")) "t3code-preview" else "t3code"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("$scheme://settings/usage"))
+                .setPackage(pkg).addCategory(Intent.CATEGORY_BROWSABLE)
+            if (intent.resolveActivity(pm) != null) return intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://app.t3.codes/usage"))
+        return if (web.resolveActivity(pm) != null) web.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        else openApp(context, settings)
+    }
+
     /**
      * Opens a thread: ACTION_VIEW on the thread URL targeted at the installed T3 package (release, then preview);
      * without one installed, the plain URL (browser / app chooser). Falls back to [openApp] without ids.

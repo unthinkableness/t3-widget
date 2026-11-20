@@ -67,12 +67,15 @@ data class WidgetState(
     val via: String? = null,
     /** True while the live-updates socket is connected. */
     val live: Boolean = false,
+    /** Most recently updated thread counted in the "running" chip. */
+    val runningThreadId: String? = null,
 ) {
     /** Same numbers and tap targets, ignoring timestamps and connection details. */
     fun sameContentAs(o: WidgetState): Boolean =
         running == o.running && needsYou == o.needsYou && topNeedsYouTitle == o.topNeedsYouTitle &&
             usage == o.usage && error == o.error && topNeedsYouThreadId == o.topNeedsYouThreadId &&
-            environmentId == o.environmentId && errorKind == o.errorKind && live == o.live
+            environmentId == o.environmentId && errorKind == o.errorKind && live == o.live &&
+            runningThreadId == o.runningThreadId
 
     fun toJson(): String = JSONObject().apply {
         put("running", running)
@@ -99,6 +102,7 @@ data class WidgetState(
         put("errorKind", errorKind?.name ?: JSONObject.NULL)
         put("via", via ?: JSONObject.NULL)
         put("live", live)
+        putOpt("runningThreadId", runningThreadId)
     }.toString()
 
     companion object {
@@ -134,6 +138,7 @@ data class WidgetState(
                     errorKind = ErrorKind.parse(o.optStringOrNull("errorKind")),
                     via = o.optStringOrNull("via"),
                     live = o.optBoolean("live", false),
+                    runningThreadId = o.optStringOrNull("runningThreadId"),
                 )
             }.getOrDefault(EMPTY)
         }

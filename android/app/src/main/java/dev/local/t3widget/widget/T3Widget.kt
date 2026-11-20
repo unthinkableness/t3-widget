@@ -103,6 +103,8 @@ class T3Widget : GlanceAppWidget() {
             val actions = TapActions(
                 // Card background: launch T3.
                 openApp = actionStartActivity(T3Links.openApp(ctx, settings)),
+                openRunning = actionStartActivity(T3Links.openThread(ctx, state.environmentId, state.runningThreadId, settings)),
+                openUsage = actionStartActivity(T3Links.openUsage(ctx, settings)),
                 // "Needs you" chip / row: the top needs-you thread, or T3 if there is none.
                 openNeedsYou = actionStartActivity(
                     if (state.needsYou > 0) T3Links.openThread(ctx, state.environmentId, state.topNeedsYouThreadId, settings)
@@ -120,7 +122,14 @@ class T3Widget : GlanceAppWidget() {
     }
 }
 
-private class TapActions(val openApp: Action, val openNeedsYou: Action, val refresh: Action, val installUpdate: Action? = null)
+private class TapActions(
+    val openApp: Action,
+    val openRunning: Action,
+    val openUsage: Action,
+    val openNeedsYou: Action,
+    val refresh: Action,
+    val installUpdate: Action?,
+)
 
 class RefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
@@ -208,22 +217,22 @@ private fun CompactLayout(s: WidgetState, now: Long, h: Health, actions: TapActi
         Logo(h, actions.installUpdate)
         Spacer(GlanceModifier.width(10.dp))
         Column {
-            Chip(Blue, "${s.running} running", highlight = false)
+            Chip(Blue, "${s.running} running", highlight = false, onClick = actions.openRunning)
             Spacer(GlanceModifier.height(4.dp))
             Chip(Amber, "${s.needsYou} needs you", highlight = s.needsYou > 0, onClick = actions.openNeedsYou)
         }
         Spacer(GlanceModifier.width(12.dp))
         Column(
-            modifier = GlanceModifier.defaultWeight().clickable(actions.refresh),
+            modifier = GlanceModifier.defaultWeight(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val statusLine = statusText(h, s, now)
             val maxBars = if (statusLine != null || narrow) 1 else 2
             if (statusLine != null) {
-                SmallText(statusLine, if (h == Health.ERROR) Red else Muted, maxLines = 1)
+                SmallText(statusLine, if (h == Health.ERROR) Red else Muted, maxLines = 1, onClick = actions.refresh)
                 Spacer(GlanceModifier.height(3.dp))
             }
-            UsageBars(tightest(s.usage, maxBars), now, dim = h.dim)
+            UsageArea(tightest(s.usage, maxBars), now, h.dim, actions.openUsage)
         }
     }
 }
@@ -235,7 +244,7 @@ private fun TallLayout(s: WidgetState, now: Long, h: Health, actions: TapActions
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Logo(h, actions.installUpdate)
             Spacer(GlanceModifier.width(10.dp))
-            Chip(Blue, "${s.running} running", highlight = false)
+            Chip(Blue, "${s.running} running", highlight = false, onClick = actions.openRunning)
             Spacer(GlanceModifier.width(6.dp))
             Chip(Amber, "${s.needsYou} needs you", highlight = s.needsYou > 0, onClick = actions.openNeedsYou)
             Spacer(GlanceModifier.defaultWeight())
@@ -262,12 +271,10 @@ private fun TallLayout(s: WidgetState, now: Long, h: Health, actions: TapActions
             Spacer(GlanceModifier.height(10.dp))
         }
         statusText(h, s, now)?.let {
-            SmallText(it, if (h == Health.ERROR) Red else Muted, maxLines = 1)
+            SmallText(it, if (h == Health.ERROR) Red else Muted, maxLines = 1, onClick = actions.refresh)
             Spacer(GlanceModifier.height(4.dp))
         }
-        Column(modifier = GlanceModifier.fillMaxWidth().clickable(actions.refresh)) {
-            UsageBars(s.usage.take(4), now, dim = h.dim)
-        }
+        UsageArea(s.usage.take(4), now, h.dim, actions.openUsage)
     }
 }
 
@@ -293,6 +300,14 @@ private fun errorLabel(s: WidgetState): String = when (s.errorKind) {
 }
 
 private fun tightest(usage: List<UsageBar>, n: Int) = usage.sortedByDescending { it.urgency }.take(n)
+
+@Composable
+private fun UsageArea(bars: List<UsageBar>, now: Long, dim: Boolean, onClick: Action) {
+    Column(modifier = GlanceModifier.fillMaxWidth().clickable(onClick)) {
+        if (bars.isEmpty()) SmallText("Usage", Muted, maxLines = 1)
+        else UsageBars(bars, now, dim)
+    }
+}
 
 @Composable
 private fun UsageBars(bars: List<UsageBar>, now: Long, dim: Boolean) {
@@ -394,6 +409,7 @@ private fun Dot(c: Color, sizeDp: Int = 7) {
 }
 
 @Composable
-private fun SmallText(text: String, color: Color, maxLines: Int) {
-    Text(text, style = TextStyle(color = cp(color), fontSize = 10.sp), maxLines = maxLines)
+private fun SmallText(text: String, color: Color, maxLines: Int, onClick: Action? = null) {
+    val modifier = if (onClick != null) GlanceModifier.clickable(onClick) else GlanceModifier
+    Text(text, modifier = modifier, style = TextStyle(color = cp(color), fontSize = 10.sp), maxLines = maxLines)
 }

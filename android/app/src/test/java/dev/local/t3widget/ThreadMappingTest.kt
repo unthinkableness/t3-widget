@@ -8,6 +8,7 @@ import dev.local.t3widget.data.UsageWindowTiming
 import dev.local.t3widget.data.WidgetState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,6 +24,7 @@ class ThreadMappingTest {
     @Test fun summarizesFixtureLikeT3() {
         val s = ThreadMapping.summarize(fixture("shell_fixture.json"))
         assertEquals(4, s.running) // t-run, t-coord (awaits subagent), t-auth (auth_refresh ignored), t-monitor
+        assertEquals("t-auth", s.runningThreadId) // newer listed activity is either hidden or awaiting the user
         assertEquals(3, s.needsYou)
         assertEquals("t-parent", s.topThreadId) // newest wait (12:00) rolled up from its subagent
         assertEquals("Widget · Parent thread", s.topTitle)
@@ -44,6 +46,25 @@ class ThreadMappingTest {
         assertEquals(0, s.running)
         assertEquals(0, s.needsYou)
         assertNull(s.topThreadId)
+        assertNull(s.runningThreadId)
+    }
+
+    @Test fun runningTargetFollowsTheLatestListedThread() {
+        val model = ShellModel()
+        model.reset(JSONObject("""{"threads":[
+            {"id":"first","status":"running","updatedAt":"2026-11-20T10:00:00Z"},
+            {"id":"second","status":"running","updatedAt":"2026-11-20T11:00:00Z"}
+        ]}"""))
+        assertEquals(2, model.summary().running)
+        assertEquals("second", model.summary().runningThreadId)
+        model.apply(JSONObject("""{"kind":"thread.updated","location":"active","thread":
+            {"id":"first","status":"running","updatedAt":"2026-11-20T12:00:00Z"}}
+        """))
+        assertEquals(2, model.summary().running)
+        assertEquals("first", model.summary().runningThreadId)
+        model.apply(JSONObject("""{"kind":"thread.removed","threadId":"first"}"""))
+        assertEquals(1, model.summary().running)
+        assertEquals("second", model.summary().runningThreadId)
     }
 
     @Test fun usageBarsOnePerProviderMostUrgentFirst() {
@@ -159,12 +180,14 @@ class ThreadMappingTest {
             running = 2, needsYou = 1, topNeedsYouTitle = "Widget · X",
             usage = listOf(UsageBar("Claude 5h", 40.5, 56, UsageWindowTiming(18_000_000L, 18_000_000L))),
             updatedAt = 123, error = "Offline", topNeedsYouThreadId = "thread:abc", environmentId = "env-1",
-            errorKind = ErrorKind.OFFLINE, via = "LAN", live = true,
+            errorKind = ErrorKind.OFFLINE, via = "LAN", live = true, runningThreadId = "thread:running",
         )
         assertEquals(s, WidgetState.fromJson(s.toJson()))
+        assertFalse(s.sameContentAs(s.copy(runningThreadId = "thread:another")))
         // Old (v0.1) JSON still loads.
         val old = WidgetState.fromJson("""{"running":1,"needsYou":0,"topNeedsYouTitle":null,"usage":[{"label":"Claude 5h","percent":40}],"updatedAt":5,"error":null}""")
         assertEquals(1, old.running)
+        assertNull(old.runningThreadId)
         assertNull(old.errorKind)
         assertEquals(60, old.usage.single().percentLeft)
         assertNull(old.usage.single().timing)

@@ -10,6 +10,7 @@ data class ThreadSummary(
     /** "Project · Title" of the thread that most recently started waiting on the user. */
     val topTitle: String?,
     val topThreadId: String?,
+    val runningThreadId: String?,
 )
 
 /**
@@ -47,6 +48,8 @@ object ThreadMapping {
         }
 
         var running = 0
+        var runningThreadId: String? = null
+        var runningUpdatedAt = ""
         data class Need(val since: String, val title: String, val id: String)
         val needing = ArrayList<Need>()
         for (t in all.filter { it.isListed() }) {
@@ -62,14 +65,24 @@ object ThreadMapping {
                 )
                 continue
             }
-            when (t.optStringOrNull("activityRunStatus") ?: t.optString("status")) {
-                "preparing", "starting", "running", "waiting" -> running++
-                "completed" -> if (holdsCompletion(t)) running++
+            val isRunning = when (t.optStringOrNull("activityRunStatus") ?: t.optString("status")) {
+                "preparing", "starting", "running", "waiting" -> true
+                "completed" -> holdsCompletion(t)
+                else -> false
+            }
+            if (isRunning) {
+                running++
+                val id = t.optString("id")
+                val updatedAt = t.optString("updatedAt")
+                if (id.isNotBlank() && (runningThreadId == null || updatedAt > runningUpdatedAt)) {
+                    runningThreadId = id
+                    runningUpdatedAt = updatedAt
+                }
             }
         }
         // ISO-8601 timestamps sort lexically; newest wait first.
         val top = needing.maxByOrNull { it.since }
-        return ThreadSummary(running, needing.size, top?.title, top?.id)
+        return ThreadSummary(running, needing.size, top?.title, top?.id, runningThreadId)
     }
 
     private fun JSONObject.lineage() = optJSONObject("lineage") ?: JSONObject()
